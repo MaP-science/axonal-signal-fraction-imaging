@@ -1,0 +1,91 @@
+{
+    "experiment": "asfimaging_hcp",
+  
+    "data_paths": {
+      "dwi": "data/hcp/dwi_DGE.nii.gz",
+      "bvals": "data/hcp/eddy_bvals.txt",
+      "bvecs": "data/hcp/eddy_bvecs.txt",
+      "mask": "data/hcp/new_dwi_bet_mask_mask_cut.nii.gz",
+      "ODF": "asfimaging/sh_descoteaux/odf_checked.npy",
+      "real_data": "data/hcp", 
+      "scheme": "data/hcp/scheme.pkl"
+    },
+  
+    "real_data_acquisition": {
+      "type": "HCP",
+      "high_bmin": 5000e6,
+      "high_bmax": 10000e6,
+      "tolerance_bval": 100e6,
+      "tolerance_b0": 45e6,
+      "TE": 0.057, 
+      "delta": 0.0129,
+      "Delta": 0.0218, 
+      "sh_order": 12
+    },
+  
+    "real_data_preprocessing": {
+      "normalize_with_b0": true,
+      "noise_distribution": "gaussian", 
+      "enforce_non_negativity": true
+    },
+
+    "synthetic_data_parameters": {
+      "N_signals": 2000000,
+      "alphas_dirichlet": [1,1,1],
+      "snr": [5,200], 
+      "t2_intra_lower": 0.030,
+      "t2_intra_upper": 0.150,
+      "t2_extra_lower": 0.030,
+      "t2_extra_upper": 0.300,
+      "t2_dot": 0.060,
+      "t2_gm_lower": 0.040,
+      "t2_gm_upper": 0.150,
+      "t2_csf": 2,
+      "intra_dpar_lower": 0.1e-9,
+      "intra_dpar_upper": 3.0e-9,
+      "intra_dperp_lower": 0,
+      "intra_dperp_upper": 0.05e-9,
+      "extra_diff_lower": 0.6e-9,
+      "extra_diff_upper": 3.0e-9,
+      "csf_diso_lower": 2.95e-9,
+      "csf_diso_upper": 3.1e-9,
+      "gm_diso_lower": 0.70e-9,
+      "gm_diso_upper": 1.0e-9,
+      "dot_diso": 0.1e-11,
+      "relative_vf_dot": 0.0
+    },
+
+    "features_labels": {
+        "zonal_ratios": true,
+        "sphm_high_b_lower": false,
+        "sphm_high_b_upper": false,
+        "sphvar_high_b_lower": false,
+        "sphvar_high_b_upper": false,
+        "spectra_high_b_lower": true,
+        "spectra_high_b_upper": false, 
+        "dpar": true,
+        "dperp": true,
+        "predicted_asf": false,
+        "calculated_asf": true
+    },
+
+    "RF_model_parameters": {
+      "type": "RF_regressor",
+      "n_estimators": 200,
+      "max_depth": 20,
+      "min_samples_split": 2,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "bootstrap": true,
+      "criterion": "squared_error",
+      "random_state": 1234, 
+      "n_jobs": 12
+    },
+  
+    "mapping": {
+      "synthetic_data": "data/synthetic_data",
+      "path_maps": "data/hcp/maps/",
+      "model_path": "data/hcp/model/RF_model_best_D0.60.pkl",
+      "scaler_path": "data/hcp/model/RF_scaler_best_D0.60.pkl"
+    }
+  }
