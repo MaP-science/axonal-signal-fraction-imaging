@@ -9,7 +9,7 @@ The code is organized as a Python package (`asfimaging`) with small command-line
 Clone the repository and install the package from the repository root.
 
 ```bash
-git clone <repository-url>
+git clone git@lab.compute.dtu.dk:dmri/axonal-signal-fraction-imaging.git
 cd asf-imaging
 pip install -e .
 ```
