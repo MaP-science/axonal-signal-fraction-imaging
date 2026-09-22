@@ -1,5 +1,137 @@
 # axonal-signal-fraction-imaging
 
+ASF Imaging contains Python code for estimating axonal signal fraction (ASF) from diffusion MRI data. The workflow generates or loads a diffusion acquisition scheme, simulates synthetic training signals, trains a random forest regressor, extracts features from diffusion MRI data, and writes parameter/ASF maps as NIfTI files.
+
+The code is organized as a Python package (`asfimaging`) with small command-line scripts in `scripts/` and example JSON configurations in `configs/`.
+
+## Installation
+
+Clone the repository and install the package from the repository root.
+
+```bash
+git clone <repository-url>
+cd asf-imaging
+pip install -e .
+```
+
+If package metadata has not yet been added to the repository, install the main runtime dependencies manually:
+
+```bash
+pip install numpy scipy pandas nibabel scikit-learn joblib cvxpy matplotlib plotly
+```
+
+
+## Quick Start
+
+The examples below use the HCP-style minimum configuration in `configs/hcp-
+.json`.
+
+First, generate the acquisition scheme:
+
+```bash
+python -m scripts.generate_scheme configs/hcp.json
+```
+
+Train a random forest regressor from synthetic data:
+
+```bash
+python -m scripts.train configs/hcp.json
+```
+
+Predict maps from real diffusion MRI data:
+
+```bash
+python -m scripts.predict configs/hcp.json
+```
+
+The output locations are controlled by the `mapping` section of the selected JSON config.
+
+## Inputs
+
+Each run is controlled by a JSON configuration file. Example configs are in `configs/`.
+
+Required diffusion MRI inputs are listed under `data_paths`:
+
+- `dwi`: diffusion-weighted image as a NIfTI file (`.nii` or `.nii.gz`)
+- `bvals`: b-values text file
+- `bvecs`: b-vectors text file
+- `mask`: brain/tissue mask as a NIfTI file
+- `ODF`: spherical harmonic coefficients used by the feature extraction workflow
+- `scheme`: path where the generated acquisition scheme pickle is saved or loaded
+
+Acquisition and preprocessing settings are listed under:
+
+- `real_data_acquisition`: acquisition type, b-value ranges, tolerances, echo time, diffusion timing, and spherical harmonic order
+- `real_data_preprocessing`: normalization, noise model, and non-negativity settings
+
+Synthetic training settings are listed under:
+
+- `synthetic_data_parameters`: number of simulated signals, SNR range, compartment fractions, T2 values, and diffusivity ranges
+
+Feature and target labels are selected under:
+
+- `features_labels`: enables feature families such as zonal ratios, spherical means, spherical variances, spectra, and target outputs
+
+Random forest settings are listed under:
+
+- `RF_model_parameters`: estimator count, tree depth, split/leaf sizes, feature sampling, random seed, and number of jobs
+
+Output paths are listed under:
+
+- `mapping`: synthetic data directory, map output directory, model path, and scaler path
+
+## Outputs
+
+The training workflow saves:
+
+- trained random forest model (`*.pkl`)
+- fitted feature scaler (`*.pkl`)
+- generated synthetic training arrays, depending on the selected config
+
+The prediction workflow saves feature files and parameter maps. The main maps are:
+
+- `map_dpar.nii.gz`: predicted parallel diffusivity map
+- `map_dperp.nii.gz`: predicted perpendicular diffusivity map
+- `map_cal_asf.nii.gz`: calculated ASF map
+
+Intermediate feature outputs may include:
+
+- RSLBPS features
+- zonal ratio features
+- spherical mean features
+- spherical variance features
+- spectra features
+- corresponding feature scheme files
+
+## Repository Layout
+
+```text
+asfimaging/          Python package
+configs/             Example JSON configuration files
+scripts/             Command-line workflow scripts
+tests/               Test suite
+notebooks/           Example notebooks
+data/                Local/example data
+```
+
+## Citation
+
+If you use ASF Imaging in scientific work, please cite the associated manuscript/software release:
+
+```bibtex
+@software{asfimaging,
+  title = {ASF Imaging},
+  author = {<Author names>},
+  year = {<Year>},
+  url = {<Repository URL>},
+  doi = {<DOI if available>}
+}
+```
+
+
+## License
+
+
 
 
 ## Getting started
