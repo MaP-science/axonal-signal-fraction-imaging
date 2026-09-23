@@ -132,6 +132,9 @@ If you use ASF Imaging in scientific work, please cite the associated manuscript
 ## License
 
 
+## DATA availablity 
+HCP-derived and clinical data are not distributed publicly with this repository because they are subject to data-use agreements, ethical approvals, institutional requirements, and participant-privacy protections. Access may be provided upon reasonable request to the corresponding author, subject to approval by the relevant data custodians and institutions and, where applicable, completion of the Human Connectome Project registration and data-use agreement. Requests will be evaluated in accordance with the original participant consent, applicable regulations, and any restrictions governing redistribution.
+
 
 
 ## Getting started
