@@ -2,7 +2,7 @@ import numpy as np
 import scipy.special as sps
 from warnings import warn
 
-_directions724 = np.load(r'/work3/s165541/workspace/WP1/MLtools/shtools/data/directions724.npy')
+_directions724 = np.load('/data/directions724.npy')
 
 # for l in np.unique(LM[:,0]):
 #     idxs = LM[:,0]==l
