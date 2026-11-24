@@ -1,22 +1,23 @@
-from typing import Any
 from asfimaging.shtools import sphericalharmonicsfit as shfit
 from asfimaging.shtools import sphericalharmonics as sh
+from asfimaging.config import check_sh_order, n_jobs, sh_fit_settings
 import pandas as pd
-import os
 import nibabel as nib
 
 import numpy as np
-from asfimaging.features.features import Features
+from asfimaging.features.features import Features, safe_divide
 
 class RSLBPS(Features):
 
-    def __init__(self, config, scheme):
-        super().__init__(config)
-        self.scheme = scheme
+
+    def high_b_values(self):
+        """The two configured high shells, ascending: [b1, b2]."""
+        acquisition = self.config['real_data_acquisition']
+        return np.sort([acquisition['high_bmin'], acquisition['high_bmax']])
 
     def calculate(self, dwi_data, mask):
         scheme = self.scheme
-        sh_order = self.config["real_data_acquisition"]['sh_order']
+        sh_order = check_sh_order(self.config)
         LM = sh.compute_lm_ordervector(sh_order)
         unique_zonal_orders = np.unique(LM[:,0])
         N_unique_zonal_orders = len(unique_zonal_orders)
@@ -27,63 +28,47 @@ class RSLBPS(Features):
         bs = []
         dshellsList = []
 
-        dshells = scheme[(scheme.b>0)].dshell.unique()
-        n_tevalues = 1
+        # Only the two high shells (b1 < b2) are fitted and saved.
         tevalue = self.config['real_data_acquisition']['TE']
-        N_unique_shells = len(dshells)*n_tevalues
-
-        N_zonal_spectra = int(sh_order/2)+1
-
+        bvalues = self.high_b_values()
 
         nR,nC,nS,nB =dwi_data.shape
-        RSLBPS = np.zeros((nR,nC,nS, len(dshells)*n_tevalues*N_unique_zonal_orders))
+        RSLBPS = np.zeros((nR,nC,nS, len(bvalues)*N_unique_zonal_orders))
 
         # Find the indices of the b=0 data, because we normalize data with respect to that:
         idxs_b0 = scheme[(scheme.b==0) & (scheme.te==tevalue)].index
         b0 = np.nanmean(dwi_data[...,idxs_b0],axis=-1)
 
         cnt=0
-        cnt_mean = 0
 
-        if self.config['real_data_preprocessing']['enforce_non_negativity']: 
-             type_ = 'relaxedpos'
-        else:
-             type_ = 'ls'
+        fit = sh_fit_settings(self.config)
+        type_ = 'relaxedpos' if fit['positivity'] else 'ls'
 
-        for n_dshell, dshell in enumerate(dshells):
-            dirs_x = scheme[(scheme.dshell==dshell) & (scheme.te==tevalue)].x.values
-            dirs_y = scheme[(scheme.dshell==dshell) & (scheme.te==tevalue)].y.values
-            dirs_z = scheme[(scheme.dshell==dshell) & (scheme.te==tevalue)].z.values
-            dirs_xyz = np.vstack([dirs_x,dirs_y,dirs_z]).T
+        for bvalue in bvalues:
+            selection = scheme[(scheme.b==bvalue) & (scheme.te==tevalue)]
+            dirs_xyz = selection[['x', 'y', 'z']].to_numpy()
 
-            idxs_selection = scheme[(scheme.dshell==dshell) & (scheme.te==tevalue)].index
-
-            shcoeff = shfit.fit_sh_all_data(np.nan_to_num(dwi_data[...,idxs_selection]/b0[...,np.newaxis]),
+            normalized = safe_divide(dwi_data[...,selection.index], b0[...,np.newaxis], mask,
+                                     label=f'b0 normalisation (b={bvalue:g})')
+            shcoeff = shfit.fit_sh_all_data(normalized,
                                         dirs_xyz,
                                         sh_order,
-                                        n_workers = 12,
+                                        n_workers = n_jobs(self.config, 'real_data_preprocessing'),
                                         mask = mask,
-                                        type = type_, 
+                                        type = type_,
                                         regularization = 'lb',
-                                        lambda_reg = 1e-6,
-                                        progressevery = 1000,
-                                        cvxpyverbose = False, 
-                                        solver = 'SCS', 
+                                        lambda_reg = fit['lambda_reg'],
+                                        cvxpyverbose = False,
+                                        solver = 'SCS',
                                         inputscale = 1)
 
-
-            print(shcoeff.shape)
-            print(RSLBPS.shape)
-            for k,zonal_order in enumerate(unique_zonal_orders):
-                idx = np.where(LM[:,0]==zonal_order)
-                print(zonal_order)
-                print(np.sum(shcoeff[...,idx],axis=-1).shape)
-
-                RSLBPS[:,:,:,cnt] = np.reshape(np.sqrt(np.sum(shcoeff[...,idx]**2,axis=-1)),(RSLBPS[:,:,:,cnt]).shape)
+            for zonal_order in unique_zonal_orders:
+                idx = np.where(LM[:,0]==zonal_order)[0]
+                RSLBPS[:,:,:,cnt] = np.sqrt(np.sum(shcoeff[...,idx]**2,axis=-1))
                 zos.append(zonal_order)
-                bs.append(scheme[(scheme.dshell==dshell) & (scheme.te==tevalue)].b.unique()[0])
-                TEs.append(scheme[(scheme.dshell==dshell) & (scheme.te==tevalue)].te.unique()[0])
-                dshellsList.append(scheme[(scheme.dshell==dshell) & (scheme.te==tevalue)].dshell.unique()[0])
+                bs.append(bvalue)
+                TEs.append(tevalue)
+                dshellsList.append(selection.dshell.iloc[0])
                 cnt += 1
 
 
@@ -99,8 +84,7 @@ class RSLBPS(Features):
 
 
     def save(self, data_affine, RSLBPS, scheme_sph_df):
-        filename = os.path.join(self.config['data_paths']['real_data'], 'features', 'rslbps.nii.gz')
-        nib.save(nib.Nifti1Image(RSLBPS, data_affine), filename)
-        filename = os.path.join(self.config['data_paths']['real_data'], 'features', 'rslbps_scheme.pkl')
-        scheme_sph_df.to_pickle(filename)
+        directory = self.output_directory()
+        nib.save(nib.Nifti1Image(RSLBPS, data_affine), directory / 'rslbps.nii.gz')
+        scheme_sph_df.to_pickle(directory / 'rslbps_scheme.pkl')
         return None

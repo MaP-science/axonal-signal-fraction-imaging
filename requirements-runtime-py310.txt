@@ -1,0 +1,26 @@
+# Runtime snapshot verified with CPython 3.10 on Linux x86_64.
+# Optional notebook tools and platform/system libraries are not included.
+# Other platforms/Python versions should resolve pyproject.toml dependencies.
+cffi==2.0.0
+clarabel==0.11.1
+cvxpy==1.7.5
+importlib-resources==7.1.0
+jinja2==3.1.6
+joblib==1.5.3
+markupsafe==3.0.3
+nibabel==5.4.2
+numpy==2.2.6
+osqp==1.1.3
+packaging==26.0
+pandas==2.3.3
+pycparser==3.0
+python-dateutil==2.9.0.post0
+pytz==2026.2
+scikit-learn==1.7.2
+scipy==1.15.3
+scs==3.2.11
+setuptools==82.0.1
+six==1.17.0
+threadpoolctl==3.6.0
+typing-extensions==4.15.0
+tzdata==2026.2

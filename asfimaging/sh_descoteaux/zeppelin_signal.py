@@ -14,7 +14,9 @@ import numpy as np
 from scipy import special
 
 
-ODF_ORDER = 12
+from asfimaging.config import SH_ORDER
+
+ODF_ORDER = SH_ORDER  # fixed: the bundled ODFs and trained features use order 12
 
 nodes, weights = np.polynomial.legendre.leggauss(60)
 
@@ -42,48 +44,42 @@ def psi_coefficients(x: float) -> np.ndarray:
     ])
 
 
-def zeppelin_signal(block, odf, lambda_parallel, lambda_perpendicular, matrix_5000, matrix_10000):
+def _shell_signal(bvalue, odf, lambda_parallel, lambda_perpendicular, matrix, orders):
+    x = bvalue * (lambda_parallel - lambda_perpendicular)
+    eigenvalues = (
+        np.exp(-bvalue * lambda_perpendicular)
+        * 2.0
+        * np.pi
+        * psi_coefficients(x)
+    )
+    return matrix @ (odf * eigenvalues[orders // 2])
+
+
+def zeppelin_signal(block, odf, lambda_parallel, lambda_perpendicular, matrix_b1, matrix_b2):
     """
-    Compute the signal for the Zeppelin diffusion model.
+    Compute the signal for the Zeppelin diffusion model on the two high shells.
     input:
-        block: a data block containing b-values and gradient directions
+        block: a data block containing b-values (s/m^2) and gradient directions
         odf: spherical harmonic coefficients of the orientation distribution function (ODF)
-        lambda_parallel: parallel diffusivity
-        lambda_perpendicular: perpendicular diffusivity
-        matrix_5000: precomputed matrix for b=5000 s/mm^2
-        matrix_10000: precomputed matrix for b=10000 s/mm^2
+        lambda_parallel: parallel diffusivity (m^2/s)
+        lambda_perpendicular: perpendicular diffusivity (m^2/s)
+        matrix_b1: precomputed SH matrix for the lower high shell b1 (high_bmin)
+        matrix_b2: precomputed SH matrix for the upper high shell b2 (high_bmax)
     output:
         signal: computed signal for the given b-values and ODF
     """
     bvalues = np.asarray(block.b, dtype=float)
-    bunique = np.unique(bvalues)
+    bunique = np.unique(bvalues)  # ascending: [b1, b2]
+    if len(bunique) != 2:
+        raise ValueError(f"Expected exactly two high b-value shells, found {len(bunique)}")
     orders = coefficient_orders(ODF_ORDER)[:, 0]
     signal = np.empty(len(bvalues), dtype=float)
 
-    # Compute the signal for b=5000 s/mm^2
-    bvalue = bunique[0]
-    x = bvalue * (lambda_parallel - lambda_perpendicular)
-    eigenvalues = (
-        np.exp(-bvalue * lambda_perpendicular)
-        * 2.0
-        * np.pi
-        * psi_coefficients(x)
-    )
-    signal_5000 = matrix_5000 @ (odf * eigenvalues[orders // 2])
-
-    # Compute the signal for b=10000 s/mm^2
-    bvalue = bunique[1]
-    x = bvalue * (lambda_parallel - lambda_perpendicular)
-    eigenvalues = (
-        np.exp(-bvalue * lambda_perpendicular)
-        * 2.0
-        * np.pi
-        * psi_coefficients(x)
-    )
-    signal_10000 = matrix_10000 @ (odf * eigenvalues[orders // 2])
+    signal_b1 = _shell_signal(bunique[0], odf, lambda_parallel, lambda_perpendicular, matrix_b1, orders)
+    signal_b2 = _shell_signal(bunique[1], odf, lambda_parallel, lambda_perpendicular, matrix_b2, orders)
 
     # Assign the computed signals to the appropriate indices
-    signal[np.isclose(bvalues, bunique[0])] = signal_5000
-    signal[np.isclose(bvalues, bunique[1])] = signal_10000
+    signal[np.isclose(bvalues, bunique[0])] = signal_b1
+    signal[np.isclose(bvalues, bunique[1])] = signal_b2
 
     return signal

@@ -1,14 +1,10 @@
 import numpy as np
 import pandas as pd
 import nibabel as nib
-from asfimaging.features.features import Features
-import os
+from asfimaging.features.features import Features, safe_divide
 
 class Variances(Features):
 
-    def __init__(self, config, scheme):
-        super().__init__(config)
-        self.scheme = scheme
 
     def calculate(self, dwi_data, mask):
         scheme_df = self.scheme
@@ -21,7 +17,7 @@ class Variances(Features):
 
         # Initialize variables
         nR,nC,nS,n4 = data_highb.shape
-        num_variances = int(scheme_df_highb.b.unique().shape[0])
+        num_variances = len(np.sort(scheme_df_highb.b.unique()))
         variances = np.zeros((nR,nC,nS,num_variances))
 
 
@@ -29,9 +25,9 @@ class Variances(Features):
         bs1 = []
         dshellsList1 = []
 
-        for j, bval in enumerate(scheme_df_highb.b.unique()):
+        for j, bval in enumerate(np.sort(scheme_df_highb.b.unique())):  # [b1, b2]
             signal = data_highb[...,((scheme_df_highb.b==bval) & (scheme_df_highb.te==tevalue))] 
-            variances[...,j] = np.var(signal/b0[...,np.newaxis], axis=-1) 
+            variances[...,j] = np.var(safe_divide(signal, b0[...,np.newaxis], mask, label='Variances b0 normalisation'), axis=-1)
 
             bs1.append(scheme_df_highb[(scheme_df_highb.b==bval)].b.unique()[0])
             TEs1.append(scheme_df_highb[(scheme_df_highb.b==bval)].te.unique()[0])
@@ -39,17 +35,16 @@ class Variances(Features):
 
 
         scheme_dict = {}
-        scheme_dict['te1'] = TEs1
-        scheme_dict['dshell1'] = dshellsList1
-        scheme_dict['b1'] = bs1
+        scheme_dict['te'] = TEs1
+        scheme_dict['dshell'] = dshellsList1
+        scheme_dict['b'] = bs1
 
         scheme_variances = pd.DataFrame(scheme_dict)
 
-        return np.nan_to_num(variances), scheme_variances
+        return variances, scheme_variances
 
     def save(self, data_affine, variances, scheme_variances):
-        filename = os.path.join(self.config['data_paths']['real_data'], 'features', 'variances.nii.gz')
-        nib.save(nib.Nifti1Image(variances, data_affine), filename)
-        filename = os.path.join(self.config['data_paths']['real_data'], 'features', 'variances_scheme.pkl')
-        scheme_variances.to_pickle(filename)
+        directory = self.output_directory()
+        nib.save(nib.Nifti1Image(variances, data_affine), directory / 'variances.nii.gz')
+        scheme_variances.to_pickle(directory / 'variances_scheme.pkl')
         return None

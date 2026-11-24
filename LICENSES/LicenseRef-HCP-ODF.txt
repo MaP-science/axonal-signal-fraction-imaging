@@ -1,0 +1,15 @@
+LicenseRef-HCP-ODF identifies the separate, unresolved data-use status of
+asfimaging/sh_descoteaux/odf_checked.npy in distribution metadata. It is not
+a new license or grant of rights.
+
+The array is excluded from the Apache-2.0 source-code license. Review its
+accompanying odf_checked.npy.README.md notice and DATA_AND_MODEL_PROVENANCE.md
+before use or redistribution. The applicable MGH-USC HCP agreement and the
+source access application determine the relevant permissions; the exact
+accepted agreement/application is not available in this repository.
+
+MGH-USC HCP Data Agreement:
+https://www.humanconnectome.org/storage/app/media/documentation/mgh_diffusion/HCP_Data_Agreement.pdf
+
+Inclusion in a source archive or wheel does not establish redistribution
+permission or replace the applicable agreement.

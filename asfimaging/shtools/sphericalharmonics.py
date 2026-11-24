@@ -1,23 +1,20 @@
+# Project-original code: Apache-2.0; see LICENSE at the repository root.
+# The four functions marked below are adapted from DIPY (BSD-3-Clause).
+# Copyright (c) 2008-2025, dipy developers. All rights reserved.
+# Retain LICENSES/DIPY-BSD-3-Clause.txt and THIRD_PARTY_NOTICES.md with copies.
+# The original DIPY source version is unknown; the notice is preserved from
+# the DIPY 1.11.0 reference used to verify provenance.
+
 import numpy as np
+from importlib.resources import files
 import scipy.special as sps
-from warnings import warn
 
-_directions724 = np.load('/data/directions724.npy')
+# Directions at which the relaxed SH positivity constraint is enforced
+# (325 near-uniform unit vectors; project-original, see DATA_AND_MODEL_PROVENANCE.md).
+with files('asfimaging').joinpath('shtools/data/directions_325_l_24.npy').open('rb') as _stream:
+    _positivity_directions = np.load(_stream, allow_pickle=False)
 
-# for l in np.unique(LM[:,0]):
-#     idxs = LM[:,0]==l
-#     idxs_num = [i for i, x in enumerate(idxs) if x]
-#     print(idxs_num)
-
-shidxs = [[0],
-[1, 2, 3, 4, 5],
-[6, 7, 8, 9, 10, 11, 12, 13, 14],
-[15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
-[28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44],
-[45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65],
-[66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90]]
-
-
+# Adapted from dipy.core.geometry.cart2sphere; BSD-3-Clause.
 def cart2sphere(x, y, z):
     r""" Return angles for Cartesian 3D coordinates `x`, `y`, and `z`
 
@@ -53,6 +50,7 @@ def cart2sphere(x, y, z):
 
 
 
+# Adapted from dipy.reconst.shm.real_sph_harm; BSD-3-Clause.
 def real_sph_harm(m, n, theta, phi):
     """ Compute real spherical harmonics.
 
@@ -89,6 +87,7 @@ def real_sph_harm(m, n, theta, phi):
  
 
 
+# Adapted from dipy.reconst.shm.real_sh_descoteaux_from_index; BSD-3-Clause.
 def real_sh_descoteaux_from_index(m, n, theta, phi, legacy=True):
     """ Compute real spherical harmonics as in Descoteaux et al. 2007 [1]_,
     where the real harmonic $Y^m_n$ is defined to be:
@@ -127,10 +126,9 @@ def real_sh_descoteaux_from_index(m, n, theta, phi, legacy=True):
            Magn. Reson. Med. 2007;58:497-510.
     """
     if legacy:
-        # In the case where m < 0, legacy descoteaux basis considers |m|
-        warn('The legacy descoteaux07 SH basis is outdated and will be '
-             'deprecated in a future DIPY release. Consider using the new '
-             'descoteaux07 basis.', category=PendingDeprecationWarning)
+        # In the case where m < 0, legacy descoteaux basis considers |m|.
+        # This basis is used on purpose (the bundled ODFs and all fits use it);
+        # DIPY's deprecation warning for it is not relevant here and was removed.
         sh = spherical_harmonics(np.abs(m), n, phi, theta)
     else:
         # In the cited paper, the basis is defined without the absolute value
@@ -142,6 +140,7 @@ def real_sh_descoteaux_from_index(m, n, theta, phi, legacy=True):
     return real_sh
  
 
+# Adapted from dipy.reconst.shm.spherical_harmonics; BSD-3-Clause.
 def spherical_harmonics(m, n, theta, phi, use_scipy=True):
     """Compute spherical harmonics.
 
@@ -225,12 +224,14 @@ def compute_sphmean(coeffs,LM=None):
 def compute_sphvar(coeffs): 
     return np.sum(coeffs[1:]**2)/(4*np.pi)
 
-def compute_l_band_power_spectra(coeffs,shorder): 
-    n_spectra = int(shorder/2+1)
-    lbps = np.zeros(n_spectra)
-    for i in range(n_spectra):
-        lbps[i] = np.sum(coeffs[shidxs[i]]**2)
-    return lbps
+def l_band_indices(sh_order):
+    """Coefficient indices of each even band l = 0, 2, ..., sh_order."""
+    LM = compute_lm_ordervector(sh_order)
+    return [np.where(LM[:, 0] == l)[0] for l in range(0, sh_order + 1, 2)]
+
+def compute_l_band_power_spectra(coeffs,shorder):
+    """Power (sum of squared coefficients) of each even band, as for real data."""
+    return np.array([np.sum(coeffs[idx]**2) for idx in l_band_indices(shorder)])
 
 '''
 DESIGN and regularization MATRICES
@@ -271,58 +272,6 @@ def sh_matrix(sh_order, vecs):
             M[:, counter] = shm(m, l, theta, phi)
             counter += 1
     return M
-
-def extented_sh_matrix(sh_order_list,list_of_bvecs):
-    '''
-    Given a list of spherical harmonics orders and a list of bvectors (e.g. one set)
-    of b-vectors for each b-value, then it creates an EXTENDED SH matrix
-    '''
-    
-    n_rows = 0
-    sh_order_max = int(np.max(np.array(sh_order_list)))
-    for vecs in list_of_bvecs:
-        n_rows = n_rows + vecs.shape[0]
-    n_cols =  ((sh_order_max + 1) * (sh_order_max + 2) // 2)
-    
-    sh_extended_matrix = np.zeros((n_rows,n_cols))
-    L_order_extended_matrix = np.zeros((n_rows,n_cols))*np.nan
-    previous_row_number = 0
-    num_shells = len(list_of_bvecs)
-    for k,vecs in enumerate(list_of_bvecs):
-        sh_order = sh_order_list[k]
-        shmtrx = sh_matrix(sh_order, vecs)
-        Lmatrix = np.ones_like(shmtrx)
-        LM = compute_lm_ordervector(sh_order)
-        Lmatrix = Lmatrix*LM[:,0]
-        shmtrx_nrows,shmtrx_ncols = shmtrx.shape
-        sh_extended_matrix[previous_row_number:previous_row_number+shmtrx_nrows,0:shmtrx_ncols] = shmtrx#shmtrx[:,::-1][:,0:-1]
-        L_order_extended_matrix[previous_row_number:previous_row_number+shmtrx_nrows,0:shmtrx_ncols] = Lmatrix
-        previous_row_number = previous_row_number+shmtrx_nrows
-    
-    L_order_indexs = []
-    lower_limit = 0#list_of_bvecs[0].shape[0]
-    
-    for k,vecs in enumerate(list_of_bvecs):
-        n_rows_block = vecs.shape[0]
-        upper_limit = lower_limit+n_rows_block
-        #print(lower_limit,upper_limit)
-        L_order_indexs_block = []
-
-        sh_order = sh_order_list[k]
-        LM = compute_lm_ordervector(sh_order)
-        for l in np.unique(LM[:,0]):
-            if l>=0:
-                #print(l)
-                whereres = np.where(L_order_extended_matrix==l)
-                idxs = (whereres[0] < upper_limit) & (whereres[0] >= lower_limit)
-                rows = whereres[0][idxs]
-                cols = whereres[1][idxs]
-                L_order_indexs_block.append(tuple((rows,cols)))
-        lower_limit = upper_limit
-
-        L_order_indexs.append(L_order_indexs_block)
-
-    return sh_extended_matrix,L_order_extended_matrix,L_order_indexs
 
 def laplace_beltrami(sh_order):
     "Returns the Laplace-Beltrami regularisation matrix for SH basis"

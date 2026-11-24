@@ -1,228 +1,264 @@
-# axonal-signal-fraction-imaging
+# Axonal Signal Fraction Imaging
 
-ASF Imaging contains Python code for estimating axonal signal fraction (ASF) from diffusion MRI data. The workflow generates or loads a diffusion acquisition scheme, simulates synthetic training signals, trains a random forest regressor, extracts features from diffusion MRI data, and writes parameter/ASF maps as NIfTI files.
-
-The code is organized as a Python package (`asfimaging`) with small command-line scripts in `scripts/` and example JSON configurations in `configs/`.
+ASF Imaging estimates axonal signal fraction (ASF) from diffusion MRI. It
+builds an acquisition scheme, simulates training signals from ODFs, trains a
+random forest, extracts image features, and saves diffusivity and ASF maps.
+Pretrained models are not distributed; train your own with appropriately
+authorized inputs. See the data-use notice below before using the bundled ODFs.
 
 ## Installation
 
-Clone the repository and install the package from the repository root.
+Python 3.10 or later is required. Get the code and install it in a virtual
+environment:
 
 ```bash
-git clone git@lab.compute.dtu.dk:dmri/axonal-signal-fraction-imaging.git
-cd asf-imaging
-pip install -e .
+git clone https://lab.compute.dtu.dk/dmri/axonal-signal-fraction-imaging.git
+cd axonal-signal-fraction-imaging
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
-If package metadata has not yet been added to the repository, install the main runtime dependencies manually:
+The package declares its runtime dependencies in `pyproject.toml`, including
+SciPy >= 1.15.3 for `sph_harm_y` and SCS for constrained fitting. Installation
+includes the positivity-constraint direction array, the ODF collection and its
+notice, and the license/provenance documents. It does not include external
+participant images or pretrained models.
+
+For the pinned CPython 3.10 / Linux x86_64 runtime used during development:
 
 ```bash
-pip install numpy scipy pandas nibabel scikit-learn joblib cvxpy matplotlib plotly
+python -m pip install -r requirements-runtime-py310.txt
+python -m pip install -e .
 ```
 
+This snapshot pins the Python runtime dependency graph, not operating-system
+libraries, optional notebook tooling, or build tools. On other platforms or
+Python versions, use the dependencies in `pyproject.toml` instead. Trained
+models and scalers are saved with joblib (compressed) and should be loaded with
+the same scikit-learn version as training.
 
-## Quick Start
+> **Only load trusted model files.** joblib files are pickle-based: loading one
+> can execute code embedded in it. Load only models and scalers you trained
+> yourself or obtained from a source you trust.
 
-The examples below use the HCP-style minimum configuration in `configs/hcp-
-.json`.
+For the example notebook, install the optional plotting dependency with
+`python -m pip install -e ".[notebook]"` (matplotlib; the package itself does
+not need it), install JupyterLab separately, and select the Python environment
+containing this package. Start it from the repository root or the
+`notebooks` directory. If working elsewhere, set the notebook's `path_config`
+explicitly. No `sys.path` modification is needed after installation.
 
-First, generate the acquisition scheme:
+For maintainers, to build a wheel locally:
 
 ```bash
-python -m scripts.generate_scheme configs/hcp.json
+python -m pip wheel --no-deps . --wheel-dir dist
 ```
 
-Train a random forest regressor from synthetic data:
+## Configuration and paths
+
+Use `configs/hcp.json` or `configs/hcp_slice.json`. Both use the bundled
+`asfimaging/sh_descoteaux/odf_checked.npy`; the latter is intended for the
+slice notebook and requests fewer training signals. The prediction CLI processes
+the full volume for either config.
+
+Every configuration is checked when it is loaded, before any work starts:
+missing keys, wrong types and impossible values (for example `high_bmin >=
+high_bmax`, a lower bound above its upper bound, or `oob_score` without
+`bootstrap`) are reported together as one error, and unknown keys, such as
+typos, produce a warning with a suggested correction. The accepted keys are
+listed in `CONFIG_SCHEMA` in `asfimaging/config.py`. When building a
+configuration dictionary in Python, `asfimaging.validate_config(config)` runs
+the same checks.
+
+Every path in `data_paths` and `mapping` is resolved against the config's
+`root`. A relative `root` is resolved against the **configuration file's
+location**, not the working directory. Without `root`, paths are relative to
+the configuration file's directory. Absolute paths and `~` are supported.
+The supplied configs use `"root": ".."`, making their paths relative to this
+checkout. If you copy a config elsewhere, update `root` and input paths.
+
+For example, `configs/hcp.json` resolves `data/hcp/scheme.pkl` to the checkout's
+`data/hcp/scheme.pkl`, even when launched from a different directory. An installed
+wheel can use configs anywhere, with their own data root; use an explicit path
+for the bundled ODF if its location differs from the example checkout layout.
+
+| Input | Required for | Format |
+| --- | --- | --- |
+| `bvals`, `bvecs` | Scheme generation | b-values in s/mm² (or s/m²); b-vectors as 3×N or N×3 text |
+| `scheme` | Training and prediction | Acquisition table created by the scheme command |
+| `ODF` | Training | ODF spherical-harmonic coefficient array |
+| `dwi`, `mask` | Prediction | 4D diffusion NIfTI and matching 3D mask; positive mask values select voxels |
+| `model_path`, `scaler_path` | Prediction | Files generated by training |
+| `mapping.labels_path`, `features_dir`, `maps_dir`, `slices_dir` (optional) | Outputs | Destinations of forest predictions, features, maps and extracted slices; defaults below |
+
+External DWI, mask, b-value and b-vector files are **not bundled**. Set their
+paths to your authorized local inputs; missing files are reported before the
+relevant stage starts. Model, feature, scheme and map output directories are
+created when saving.
+
+The internal acquisition scheme and config shell values use s/m², timing uses
+seconds, and diffusivity uses m²/s. Scheme generation preserves DWI volume
+order, snaps b-values to the configured shell tolerances, and requires b0 plus
+the two configured high-b shells. Each high-b shell must have enough directions
+for spherical-harmonic order 12. The order is fixed at 12 (the ODF library, the
+Zeppelin kernel and the trained features depend on it); `sh_order` must be 12.
+The two high shells are called b1 (`high_bmin`, 5000 s/mm² in the supplied
+configs) and b2 (`high_bmax`, 10000 s/mm²). Only b0, b1 and b2 are used; other
+shells in the DWI are ignored.
+
+## Run the workflow
+
+From the checkout, after configuring the external inputs:
 
 ```bash
-python -m scripts.train configs/hcp.json
+asfi-generate-scheme configs/hcp.json
+asfi-train configs/hcp.json
+asfi-predict configs/hcp.json
 ```
 
-Predict maps from real diffusion MRI data:
+To check the trained model on a separate synthetic test set (generated with
+`random_seed_test`):
 
 ```bash
-python -m scripts.predict configs/hcp.json
+asfi-evaluate configs/hcp.json
 ```
 
-The output locations are controlled by the `mapping` section of the selected JSON config.
+This prints MAE, RMSE, bias and R² for each forest target (diffusivities in
+µm²/ms) and for the calculated ASF, and saves them as JSON at
+`mapping.metrics_path` (default: next to the model, `<model name>_test_metrics.json`).
+It does not overwrite `labels_path`.
 
-## Inputs
+From another directory, pass the path to your config. The equivalent module
+commands are `python -m asfimaging.cli.generate_scheme`, `python -m asfimaging.cli.train`,
+`python -m asfimaging.cli.predict`, and `python -m asfimaging.cli.evaluate`. All commands support `--help`.
 
-Each run is controlled by a JSON configuration file. Example configs are in `configs/`.
+An existing scheme is retained unless you pass `--overwrite`. Regenerate it
+when changing acquisition inputs or settings. To predict using saved features:
 
-Required diffusion MRI inputs are listed under `data_paths`:
+```bash
+asfi-predict configs/hcp.json --use-features
+```
 
-- `dwi`: diffusion-weighted image as a NIfTI file (`.nii` or `.nii.gz`)
-- `bvals`: b-values text file
-- `bvecs`: b-vectors text file
-- `mask`: brain/tissue mask as a NIfTI file
-- `ODF`: spherical harmonic coefficients used by the feature extraction workflow
-- `scheme`: path where the generated acquisition scheme pickle is saved or loaded
+Cached feature files must match the configured DWI, mask and feature settings.
+The legacy positional switch `true`/`false` is also accepted. This path loads
+features and then runs the trained model; it does not treat features as predictions.
 
-Acquisition and preprocessing settings are listed under:
+Training size and parameters are under `synthetic_data_parameters` and
+`RF_model_parameters`; feature selection is under `features_labels`.
+`random_seed_train` and `random_seed_test` make the synthetic training and test
+sets reproducible. `snr` is either `[low, high]` or six values giving WM, GM and
+CSF ranges (`[wm_low, wm_high, gm_low, gm_high, csf_low, csf_high]`); the
+six-value form issues a warning when used. Parallel workers are set per stage:
+`real_data_preprocessing.n_jobs` (real-data SH fitting, default 1),
+`synthetic_data_parameters.n_jobs` (simulation, default 1) and
+`RF_model_parameters.n_jobs` (forest). `RF_model_parameters.oob_score` (default:
+the value of `bootstrap`) reports the out-of-bag R² after training; it requires
+`bootstrap: true`.
+`configs/hcp.json` requests 2,000,000 synthetic signals and can require substantial
+memory and time. Set `N_signals` for your available resources before training.
+`N_signals_test` sets the size of the synthetic test set used by `asfi-evaluate`
+(default: `N_signals`); the supplied configs use 10% of the training size.
 
-- `real_data_acquisition`: acquisition type, b-value ranges, tolerances, echo time, diffusion timing, and spherical harmonic order
-- `real_data_preprocessing`: normalization, noise model, and non-negativity settings
-
-Synthetic training settings are listed under:
-
-- `synthetic_data_parameters`: number of simulated signals, SNR range, compartment fractions, T2 values, and diffusivity ranges
-
-Feature and target labels are selected under:
-
-- `features_labels`: enables feature families such as zonal ratios, spherical means, spherical variances, spectra, and target outputs
-
-Random forest settings are listed under:
-
-- `RF_model_parameters`: estimator count, tree depth, split/leaf sizes, feature sampling, random seed, and number of jobs
-
-Output paths are listed under:
-
-- `mapping`: synthetic data directory, map output directory, model path, and scaler path
+Real and synthetic signals are fitted with the same SH settings, so training and
+prediction features match: `real_data_preprocessing.enforce_non_negativity`
+(default `true`) and `real_data_preprocessing.sh_lambda_reg` (Laplace–Beltrami
+weight, default `0`). SCS is the solver for the non-negativity-constrained fit.
+Solver failures are reported with a warning before falling back to least
+squares, which does not enforce positivity. Inspect those warnings when
+evaluating results. Constrained fitting of synthetic signals costs about 25 ms
+of CPU per signal.
 
 ## Outputs
 
-The training workflow saves:
+- Trained random forest and scaler at `mapping.model_path` and `mapping.scaler_path`.
+- Synthetic arrays and sampled parameters under `mapping.synthetic_data`, named
+  by split (`train`/`test`), seed, size, SNR and Dirichlet parameters.
 
-- trained random forest model (`*.pkl`)
-- fitted feature scaler (`*.pkl`)
-- generated synthetic training arrays, depending on the selected config
+Result locations are set in `mapping`; any that are omitted default to a
+`results` folder created next to the `dwi` file:
 
-The prediction workflow saves feature files and parameter maps. The main maps are:
+- `features_dir` (default `results/features/`): feature NIfTI files and scheme
+  tables. `spectra_b1` is the lower and `spectra_b2` the upper high shell.
+- `maps_dir` (default `results/maps/`): `map_dpar.nii.gz`, `map_dperp.nii.gz`, and
+  `map_cal_asf.nii.gz` (always computed); `map_pred_asf.nii.gz` when the
+  predicted-ASF target is enabled.
+- `labels_path` (default `results/RF_labels.npy`): raw forest predictions.
+- `slices_dir` (default `results/`): extracted slices (`*_slice_<index>.npy`) when
+  the notebook selects a plane.
 
-- `map_dpar.nii.gz`: predicted parallel diffusivity map
-- `map_dperp.nii.gz`: predicted perpendicular diffusivity map
-- `map_cal_asf.nii.gz`: calculated ASF map
+Divisions by b0 and between shells write 0, with a warning giving the count of
+affected voxels inside the mask, where the denominator is zero, negative or not
+finite.
 
-Intermediate feature outputs may include:
+The notebook extracts an axial slice and passes its image, mask and adjusted
+spatial affine explicitly to map saving. The command-line prediction workflow
+uses the full image.
 
-- RSLBPS features
-- zonal ratio features
-- spherical mean features
-- spherical variance features
-- spectra features
-- corresponding feature scheme files
-
-## Repository Layout
+## Repository layout
 
 ```text
-asfimaging/          Python package
-configs/             Example JSON configuration files
-scripts/             Command-line workflow scripts
-tests/               Test suite
-notebooks/           Example notebooks
-data/                Local/example data
+asfimaging/                    Python implementation, bundled resources and
+                               command-line entry points (asfimaging/cli)
+configs/                       Example JSON configurations
+notebooks/hcp_example.ipynb     Example slice workflow
+requirements-runtime-py310.txt Pinned development runtime dependencies
+LICENSE, LICENSES/             Project and DIPY license texts
+THIRD_PARTY_NOTICES.md          Attribution for copied/adapted DIPY material
+DATA_AND_MODEL_PROVENANCE.md    Array provenance and separate model/data terms
 ```
 
-## Citation
+## Citation and provenance
 
-If you use ASF Imaging in scientific work, please cite the associated manuscript/software release:
+A project manuscript/DOI has not yet been specified. When reporting results,
+identify the repository and exact commit/version used rather than a placeholder
+citation. The positivity-constraint directions were generated with qspace; please
+also cite Caruyer E, Lenglet C, Sapiro G, Deriche R. Design of multishell sampling schemes with uniform coverage in diffusion MRI. Magn Reson Med. 2013;69(6):1534-1540. doi:10.1002/mrm.24736. For the bundled MGH-derived ODFs, follow the MGH-USC acknowledgment
+and relevant data/method citation guidance linked in the provenance document.
 
-```bibtex
-@software{asfimaging,
-  title = {ASF Imaging},
-  author = {<Author names>},
-  year = {<Year>},
-  url = {<Repository URL>},
-  doi = {<DOI if available>}
-}
-```
+## Data availability and pretrained models
 
+This checkout includes `asfimaging/sh_descoteaux/odf_checked.npy`: curated and
+modified ODFs obtained by fitting MSMT-CSD to one MGH Adult Diffusion HCP dataset,
+according to the project maintainer. The subject identifier and detailed
+processing history are unavailable. The project provides training code and
+instructions and retains this ODF collection with the following notice.
+
+> **HCP-derived ODF training data:** `odf_checked.npy` is not covered by the
+> project's Apache-2.0 license. If you use this collection to generate signals
+> or train models, review the [MGH-USC HCP Data Agreement](https://www.humanconnectome.org/storage/app/media/documentation/mgh_diffusion/HCP_Data_Agreement.pdf)
+> and confirm which terms apply to your intended use, including redistribution
+> of the ODFs, simulated training data, or trained models and commercial use.
+> Follow the applicable MGH-USC acknowledgment requirements. Generating
+> synthetic signals does not by itself establish unrestricted reuse rights.
+> This notice does not grant permissions or replace the applicable agreement.
+
+Random forest models trained using signals simulated from these ODFs require
+a **separate licensing decision**. Pretrained models are not included in this
+release, and no pretrained model license is granted by the source-code license.
+Users may train their own models with appropriately authorized inputs. See
+the provenance document for the original MGH-USC agreement and acknowledgment
+links and the [notice accompanying the ODF file](asfimaging/sh_descoteaux/odf_checked.npy.README.md).
+
+Other HCP-derived or clinical inputs must be obtained through the applicable
+authorized access process. The positivity-constraint direction set
+`directions_325_l_24.npy` is project-original and documented in the provenance
+document.
 
 ## License
 
+Project-original source code is licensed under the **Apache License, Version
+2.0**; see [LICENSE](LICENSE).
 
-## DATA availablity 
-HCP-derived and clinical data are not distributed publicly with this repository because they are subject to data-use agreements, ethical approvals, institutional requirements, and participant-privacy protections. Access may be provided upon reasonable request to the corresponding author, subject to approval by the relevant data custodians and institutions and, where applicable, completion of the Human Connectome Project registration and data-use agreement. Requests will be evaluated in accordance with the original participant consent, applicable regulations, and any restrictions governing redistribution.
+Four adapted DIPY functions retain their original
+**BSD-3-Clause** terms and copyright notice. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the function-level attribution
+and [the complete DIPY license](LICENSES/DIPY-BSD-3-Clause.txt).
 
+The code license does not cover participant-derived data, generated training
+datasets, or pretrained models/scalers. Their provenance and separate licensing
+status are documented in [DATA_AND_MODEL_PROVENANCE.md](DATA_AND_MODEL_PROVENANCE.md).
 
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://lab.compute.dtu.dk/dmri/axonal-signal-fraction-imaging.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-* [Set up project integrations](https://lab.compute.dtu.dk/dmri/axonal-signal-fraction-imaging/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Distribution metadata records Apache-2.0 and BSD-3-Clause for code plus
+`LicenseRef-HCP-ODF` for the separately governed ODF array; that reference is
+not an additional grant of data rights.

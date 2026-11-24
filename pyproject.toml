@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asfimaging"
+version = "0.1.0"
+description = "Axonal signal fraction estimation from diffusion MRI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0 AND BSD-3-Clause AND LicenseRef-HCP-ODF"
+license-files = ["LICENSE", "LICENSES/*.txt", "THIRD_PARTY_NOTICES.md", "DATA_AND_MODEL_PROVENANCE.md"]
+dependencies = [
+    "numpy>=1.25,<3",
+    "scipy>=1.15.3,<2",
+    "pandas>=2,<3",
+    "nibabel>=5,<6",
+    "scikit-learn>=1.7,<1.8",
+    "joblib>=1.3,<2",
+    "cvxpy>=1.6,<2",
+    "scs>=3.2,<4",
+]
+
+[project.optional-dependencies]
+notebook = ["matplotlib>=3.7,<4"]
+
+[project.scripts]
+asfi-generate-scheme = "asfimaging.cli.generate_scheme:main"
+asfi-train = "asfimaging.cli.train:main"
+asfi-predict = "asfimaging.cli.predict:main"
+asfi-evaluate = "asfimaging.cli.evaluate:main"
+
+[tool.setuptools.packages.find]
+include = ["asfimaging*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+asfimaging = ["shtools/data/directions_325_l_24.npy", "sh_descoteaux/odf_checked.npy", "sh_descoteaux/odf_checked.npy.README.md"]
+
+[tool.setuptools.exclude-package-data]
+"*" = [".gitkeep"]

@@ -1,11 +1,13 @@
+import logging
+import warnings
+
 import numpy as np
 import cvxpy
-from .posoptimize import PositiveDefiniteLeastSquares, load_sdp_constraints
-from . import sphericalharmonics as sh
-# from diffusion_methods import sh2 as sh
 from joblib import Parallel, delayed
-from . import timemanagement as tm
-import warnings
+
+from . import sphericalharmonics as sh
+
+logger = logging.getLogger(__name__)
 
 '''
 FITTING SPHERICAL HARMONICS COEFFICIENTS
@@ -26,305 +28,143 @@ def fit_sh(shell, M, R,lambda_reg=0):
         coef = np.dot(pseudoInv, shell)
     return coef
 
+_POSITIVITY_PROBLEMS = {}
+
+
+def _positivity_problem(M, R, lambda_reg, M_positivity):
+    """Build (once per process) a parameterised CVXPY problem for this design.
+
+    The signal is a CVXPY Parameter, so repeated fits with the same directions
+    reuse the compiled problem instead of re-canonicalising it every voxel.
+    """
+    key = (M.shape, M.tobytes(), M_positivity.shape, float(lambda_reg),
+           R.tobytes() if lambda_reg else b'')
+    cached = _POSITIVITY_PROBLEMS.get(key)
+    if cached is None:
+        c = cvxpy.Variable(M.shape[1])
+        shell = cvxpy.Parameter(M.shape[0])
+        cost = cvxpy.sum_squares(M @ c - shell)
+        if lambda_reg:
+            cost = cost + lambda_reg * cvxpy.quad_form(c, cvxpy.psd_wrap(R))
+        problem = cvxpy.Problem(cvxpy.Minimize(cost), [(M_positivity @ c) >= 0])
+        cached = (problem, c, shell)
+        _POSITIVITY_PROBLEMS[key] = cached
+    return cached
+
+
 def fit_sh_relaxed_positivity(shell, M, R,lambda_reg,M_positivity,verbose=False,solver=None):
     '''
     shell: data points on a spherical shell (possibly with equidistant sampling)
     M:     SH design matrix
-    R:     regularization matrix (e.g. Laplace-beltrami)
-    
+    R:     regularization matrix (e.g. Laplace-beltrami); ignored when lambda_reg == 0
+
     implements "relaxed" positivity constraints contained
     within a M_positivity matrix that has NOT been pre-multiplied
     by the regularization value lambda_reg
     '''
-
-    c = cvxpy.Variable(M.shape[1])
-    design_matrix = cvxpy.Constant(M)
-
-    objective = cvxpy.Minimize(
-        cvxpy.sum_squares(design_matrix @ c - shell) +
-        lambda_reg * cvxpy.quad_form(c, R)
-    )
-    
-    constraints = [(M_positivity @ c) >=0]
-    prob = cvxpy.Problem(objective, constraints)
-    prob.solve(verbose=verbose,solver=solver)
-    coef = np.asarray(c.value).squeeze()
+    prob, c, shell_param = _positivity_problem(M, R, lambda_reg, M_positivity)
+    shell_param.value = np.asarray(shell, dtype=float).reshape(-1)
+    # No warm start: a reused (cached) problem must not depend on the previous fit.
+    prob.solve(verbose=verbose, solver=solver, warm_start=False)
+    if prob.status not in (cvxpy.OPTIMAL, cvxpy.OPTIMAL_INACCURATE) or c.value is None:
+        raise RuntimeError(f"Constrained SH fitting failed: {prob.status}")
+    coef = np.asarray(c.value, dtype=float).reshape(-1)
+    if coef.size != M.shape[1] or not np.all(np.isfinite(coef)):
+        raise RuntimeError("Constrained SH fitting returned invalid coefficients")
 
     return coef
 
 
-def preload_sdp(sh_order,M):
-    sdp_constraints = load_sdp_constraints('real_sh_descoteaux',sh_order)
-    sdp = PositiveDefiniteLeastSquares(M.shape[1],A=sdp_constraints)
-    return sdp 
+def fit_sh_single(shell, M, R, lambda_reg=0.0, positivity=True, M_positivity=None,
+                  solver='SCS', verbose=False, label=''):
+    """Fit one shell, used identically for real voxels and synthetic signals.
 
-def fit_sh_necessary_positivity(shell, M,sdp_constraints,sdppreloaded=None,verbose=False,solver=None):
-    '''
-    Solves the SH fitting problem by imposing NECESSARY constraints for positivity
-    as proposed by Dela Haije et al., 2020.
-    
-    You can pass a full sdppreloaded as
-        sdp_constraints = posoptimize.load_sdp_constraints('real_sh_descoteaux',sh_order)
-        sdppreloaded = PositiveDefiniteLeastSquares(M.shape[1],A=sdp_constraints)
-    OR with
-        sdppreloaded = sphericalharmonicsfit.preload_sdp(sh_order,M)
-        
-    Note: if the chosen solver is 'MOSEK'
-    Make sure to have a MOSEK License if you do not want to have license errors
-    (which are difficult to debug when using parallelization)
-    Make also sure that you scale the input data (multiply by a big number) to avoid numerical issues
-    '''
-    if sdppreloaded is None:
-        sdp = PositiveDefiniteLeastSquares(M.shape[1],A=sdp_constraints)
-    else:
-        sdp = sdppreloaded
-    
-    coef = sdp.solve(M, shell,solver=solver,verbose=verbose)
-     
-    return coef
-
-
-def create_regularization_matrix(shorder,type='lb'):
-    if type=='lb':
-        R = sh.laplace_beltrami(shorder)
-    elif type=='eye':
-        R = np.eye(int((shorder+1)*(shorder+2)/2))
-    else:
-        raise ValueError('either lb or eye are acceptable')
-    return R
-
-
-
-
-
-def worker_fit_sh(tuple_item):
-    start = tm.get_time()
-    signal          = tuple_item[0]
-    M               = tuple_item[1]
-    R               = tuple_item[2]
-    lambda_reg      = tuple_item[3]
-    
-    tot           = tuple_item[4]
-    x             = tuple_item[5]
-    n_workers     = tuple_item[6]
-    progressevery = tuple_item[7]
-
-       
-    coeffs = fit_sh(signal, M, R,lambda_reg)
-    #recon = sh.sh_reconstruction(M, coeffs)
-    
-    
-    strt = tm.print_expected_time(start,x,tot,every_integer=progressevery,n_workers=n_workers)
-
-    return tuple(coeffs)
-
-def worker_fit_sh_relaxed_positivity(tuple_item): # USED
-    start = tm.get_time()
-    signal          = tuple_item[0]
-    M               = tuple_item[1]
-    M_positivity    = tuple_item[2]
-    R               = tuple_item[3]
-    lambda_reg      = tuple_item[4]
-    cvxpyverbose    = tuple_item[5]
-    solver          = tuple_item[6]
-
-    tot           = tuple_item[7]
-    x             = tuple_item[8]
-    n_workers     = tuple_item[9]
-    progressevery = tuple_item[10]
-
-    
-    
+    With positivity, a failed constrained fit falls back (with a warning) to
+    least squares using the same lambda_reg.
+    """
+    if not positivity:
+        return fit_sh(shell, M, R, lambda_reg=lambda_reg)
+    if np.all(np.asarray(shell) == 0):
+        return np.zeros(M.shape[1])
     try:
-        coeffs =  fit_sh_relaxed_positivity(signal, M, R,lambda_reg,M_positivity,cvxpyverbose,solver)
-        if coeffs is None:
-            msg = 'worker '+ str(x) +' relaxed positivity failed. Solving REGULARIZED least-squares instead..'
-            warnings.warn(msg)
-            coeffs = fit_sh(signal, M, R,lambda_reg=lambda_reg)
-    except:
-        msg = 'worker '+ str(x) +' relaxed positivity failed. Solving REGULARIZED least-squares instead..'
-        warnings.warn(msg)
-        
-        if solver=='MOSEK':
-            msg2 = 'You are using MOSEK: try to scale input data by a large number, e.g. 10000,\nand dont forget to then divide teh output by the same:\nodfcoeff=odfcoeff/10000'
-            warnings.warn(msg2) 
-            
-        
-        coeffs = fit_sh(signal, M, R,lambda_reg=lambda_reg)
-        # print('coeffs',coeffs)
-        # coeffs = np.ones(M.shape[1])
-        # print(signal.shape,M.shape,R.shape,lambda_reg)
-    #recon = sh.sh_reconstruction(M, coeffs)
-    
-    
-    strt = tm.print_expected_time(start,x,tot,every_integer=progressevery,n_workers=n_workers)
-
-    # Dealing with Capricious MOSEK
-    try:
-        result = tuple(coeffs)
-    except:
-        msg = 'worker '+ str(x) +' falied'
-        warnings.warn(msg)
-        coeffs = np.zeros(M.shape[1])
-        result = tuple(coeffs)
-
-    return result
+        return fit_sh_relaxed_positivity(shell, M, R, lambda_reg, M_positivity, verbose, solver)
+    except (cvxpy.error.SolverError, RuntimeError) as exc:
+        warnings.warn(
+            f"{label}constrained SH fitting failed ({exc}); "
+            "using least squares without positivity constraints.",
+            RuntimeWarning,
+        )
+        return fit_sh(shell, M, R, lambda_reg=lambda_reg)
 
 
-def worker_fit_sh_necessary_positivity(tuple_item):
-    start = tm.get_time()
-    signal          = tuple_item[0]
-    M               = tuple_item[1]
-    sdp_constraints = tuple_item[2]
-    sdppreloaded    = tuple_item[3]
-    cvxpyverbose    = tuple_item[4]
-    solver          = tuple_item[5]
-    
-    tot           = tuple_item[6]
-    x             = tuple_item[7]
-    n_workers     = tuple_item[8]
-    progressevery = tuple_item[9]
-
-    
-    # if sdppreloaded is None:
-    #         sdppreloaded = PositiveDefiniteLeastSquares(M.shape[1],A=sdp_constraints)
-    # # coeffs = fit_sh_necessary_positivity(signal, M, sdp_constraints,sdppreloaded,cvxpyverbose)
-    # coeffs = fit_sh_necessary_positivity(signal, M, sdp_constraints,None,cvxpyverbose,solver)
-    
-    try:
-        if sdppreloaded is None:
-            sdppreloaded = PositiveDefiniteLeastSquares(M.shape[1],A=sdp_constraints)
-        coeffs = fit_sh_necessary_positivity(signal, M, sdp_constraints,sdppreloaded,cvxpyverbose)
-    except:
-        msg = 'worker '+ str(x) +' necessary positivity failed. Solving NON-regularized least-squares instead'
-        warnings.warn(msg)
-        R = np.zeros((M.shape[1],M.shape[1]))
-        coeffs =  fit_sh(signal, M, R,lambda_reg=0)
-    # recon = sh.sh_reconstruction(M, coeffs)
-    
-    
-    strt = tm.print_expected_time(start,x,tot,every_integer=progressevery,n_workers=n_workers)
-
-    return tuple(coeffs)
+def worker_fit_sh(signal, M, R, lambda_reg):
+    return fit_sh(signal, M, R, lambda_reg)
 
 
-def fit_sh_all_data(data_rcs,dirs_xyz,sh_order,n_workers,mask,type='ls',regularization='lb',lambda_reg=1e-001,progressevery=100,cvxpyverbose=False,solver='MOSEK',inputscale=10000):
+def worker_fit_sh_relaxed_positivity(signal, M, M_positivity, R, lambda_reg, cvxpyverbose, solver, x):
+    return fit_sh_single(signal, M, R, lambda_reg=lambda_reg, positivity=True,
+                         M_positivity=M_positivity, solver=solver,
+                         verbose=cvxpyverbose, label=f"Voxel {x}: ")
+
+
+def fit_sh_all_data(data_rcs,dirs_xyz,sh_order,n_workers,mask,type='ls',regularization='lb',lambda_reg=0.0,cvxpyverbose=False,solver='SCS',inputscale=10000):
     '''
-    type = 'ls' OR 'relaxedpos' OR 'necessarypos'
+    type = 'ls' OR 'relaxedpos'
     regularization = 'lb' OR 'eye'
-    inputscale scales the input for preventing numerical errors (Particularly useful when using MOSEK solver)
-    
+    inputscale scales constrained-fit inputs for numerical stability.
+
     for the possible solvers check cvxpy.installed_solvers()
+    Progress is reported by joblib.
     '''
-    
-    if (type!='ls') & (type!='relaxedpos') & (type!='necessarypos'):
-        raise ValueError('Incorrect type specified')
-    
-    use_input_scale = False
-    if (inputscale!=1)&(type!='ls'):
-        use_input_scale = True
-        if inputscale<=0:
-            raise ValueError('inputscale must be a non-zero positive scalar value')
-        print('Using inputscale=',inputscale,', make sure that input data is not too small nor too large!')
-    else:
-        warnings.warn('It may be safer to use inputscale != 1 for numerical stability by making sure that input data is not too small nor too large!!')
-    
-    if use_input_scale:
-        data_rcs = data_rcs*inputscale
-    
-    if (type!='ls'):
-        if solver not in cvxpy.installed_solvers():
-            solver = None
-            warnings.warn('solver was set to None cause selected '+ solver + ' is not installed!')
-    
-    if (regularization!='lb') & (type!='eye'):
-        raise ValueError('Incorrect regularization specified')
-    
-    progressevery = int(progressevery)
-    
-    nR,nC,nS,ndirs = data_rcs.shape
-    # data_sphmean = np.zeros((nR,nC,nS))
-    # data_sphvar = np.zeros((nR,nC,nS))
 
-    # LM = sh.compute_lm_ordervector(sh_order)
+    if type not in ('ls', 'relaxedpos'):
+        raise ValueError("Unsupported fitting type. Use 'ls' or 'relaxedpos'.")
+
+    if regularization not in ('lb', 'eye'):
+        raise ValueError("regularization must be 'lb' or 'eye'")
+    if sh_order < 0 or sh_order % 2:
+        raise ValueError("SH order must be a non-negative even integer")
+    if not np.isfinite(inputscale) or inputscale <= 0:
+        raise ValueError("inputscale must be finite and positive")
+    if n_workers == 0:
+        raise ValueError("n_workers must not be zero")
+    data_rcs = np.asarray(data_rcs, dtype=float)
+    mask = np.asarray(mask) > 0
+    if data_rcs.ndim != 4 or mask.shape != data_rcs.shape[:3]:
+        raise ValueError("Expected 4D diffusion data and a matching 3D mask")
+    if np.shape(dirs_xyz) != (data_rcs.shape[-1], 3):
+        raise ValueError("Directions must have shape (number of volumes, 3)")
+    use_input_scale = inputscale != 1 and type != 'ls'
+    if use_input_scale:
+        data_rcs = data_rcs * inputscale
+    if type != 'ls' and solver is not None and solver not in cvxpy.installed_solvers():
+        warnings.warn(
+            f"Solver {solver!r} is not installed; allowing CVXPY to choose a solver.",
+            RuntimeWarning,
+        )
+        solver = None
+
     M = sh.sh_matrix(sh_order, dirs_xyz)
-    
-    
-    if (type=='ls') | (type=='relaxedpos'):
-        R = create_regularization_matrix(sh_order,type=regularization)
-    
-    if type=='relaxedpos':
-        M_positivity = sh.sh_matrix(sh_order, sh._directions724)
-    
-    if type=='necessarypos':
-        sdp_constraints = load_sdp_constraints('real_sh_descoteaux',sh_order)
-        sdppreloaded = PositiveDefiniteLeastSquares(M.shape[1],A=sdp_constraints)
-    
-    
-    data_sphcoeff = np.zeros((nR,nC,nS,M.shape[1]))
+    R = sh.create_regularization_matrix(sh_order,type=regularization)
 
-    list_data_idxs = []
-    tot = np.sum(mask.astype(int))
-    cnt = 0
-    for r in range(nR):
-        for c in range(nC):
-            for s in range(nS):
-                if mask[r,c,s]==1:
-                    if type=='ls':
-                        # list_data_idxs.append((data_rcs[r,c,s,:],M,R,lambda_reg,LM,tot,cnt,n_workers,progressevery))
-                        list_data_idxs.append((data_rcs[r,c,s,:],M,R,lambda_reg,tot,cnt,n_workers,progressevery))
-                    elif type=='relaxedpos':
-                        # list_data_idxs.append((data_rcs[r,c,s,:],M,M_positivity,R,lambda_reg,LM,cvxpyverbose,tot,cnt,n_workers,progressevery))
-                        list_data_idxs.append((data_rcs[r,c,s,:],M,M_positivity,R,lambda_reg,cvxpyverbose,solver,tot,cnt,n_workers,progressevery))
-                    elif type=='necessarypos':
-                        # list_data_idxs.append((data_rcs[r,c,s,:],M,sdp_constraints,sdppreloaded,LM,cvxpyverbose,tot,cnt,n_workers,progressevery))
-                        list_data_idxs.append((data_rcs[r,c,s,:],M,sdp_constraints,sdppreloaded,cvxpyverbose,solver,tot,cnt,n_workers,progressevery))
-                    else:
-                        raise ValueError('Selected type is not implemented')
-                    cnt = cnt + 1
-
-    
+    voxels = data_rcs[mask]  # (n_voxels, n_dirs), in r, c, s order
     if type=='ls':
-        worker_fun = worker_fit_sh
-        print('-> Include',regularization,'regularization with lambda',lambda_reg)
-    elif type=='relaxedpos':
-        worker_fun = worker_fit_sh_relaxed_positivity
-        print('-> Include',regularization,'regularization with lambda',lambda_reg,'and relaxed positivity constraints')
-    elif type=='necessarypos':
-        print('-> Include NO regularization and NECESSARY positivity constraints')
-        worker_fun = worker_fit_sh_necessary_positivity
+        logger.info("SH fit: least squares, %s regularization, lambda %g", regularization, lambda_reg)
+        tasks = (delayed(worker_fit_sh)(signal, M, R, lambda_reg) for signal in voxels)
     else:
-        raise ValueError('Selected type is not implemented')
-    
-    results = Parallel(n_jobs=n_workers,verbose=1)(delayed(worker_fun)(list_data_idxs[x]) for x in range(cnt))
-    
-    cnt=0
-    for r in range(nR):
-        for c in range(nC):
-            for s in range(nS):
-                if mask[r,c,s]==1:
-                    fit_result = results[cnt]
-                    cnt = cnt + 1
-                    data_sphcoeff[r,c,s,:] = fit_result
+        logger.info("SH fit: relaxed positivity, %s regularization, lambda %g", regularization, lambda_reg)
+        M_positivity = sh.sh_matrix(sh_order, sh._positivity_directions)
+        tasks = (delayed(worker_fit_sh_relaxed_positivity)(signal, M, M_positivity, R, lambda_reg,
+                                                           cvxpyverbose, solver, x)
+                 for x, signal in enumerate(voxels))
+
+    results = Parallel(n_jobs=n_workers,verbose=1)(tasks)
+
+    data_sphcoeff = np.zeros(data_rcs.shape[:3] + (M.shape[1],))
+    if len(results):
+        data_sphcoeff[mask] = np.asarray(results).reshape(len(results), M.shape[1])
 
     if use_input_scale:
-        data_rcs = data_rcs/inputscale
         data_sphcoeff = data_sphcoeff/inputscale
-    
+
     return data_sphcoeff
-
-        
-
-
-def compute_l_band_power_spectra_all_data(coeffs,shorder):
-
-
-    n_coeffs = coeffs.shape[-1]
-    n_spectra = int(shorder/2+1)
-    
-    lbps = np.zeros(coeffs.shape[0:-1]+tuple([n_spectra]))
-
-    for i in range(n_spectra):
-        lbps[...,i] = np.sum(coeffs[...,sh.shidxs[i]]**2,axis=-1)
-
-    return lbps

@@ -1,18 +1,17 @@
 {
+    "root": "..",
     "experiment": "asfimaging_hcp",
   
     "data_paths": {
       "dwi": "data/hcp/dwi_DGE.nii.gz",
-      "bvals": "data/hcp/eddy_bvals.txt",
-      "bvecs": "data/hcp/eddy_bvecs.txt",
+      "bvals": "data/hcp/bvals.txt",
+      "bvecs": "data/hcp/bvecs.txt",
       "mask": "data/hcp/new_dwi_bet_mask_mask_cut.nii.gz",
       "ODF": "asfimaging/sh_descoteaux/odf_checked.npy",
-      "real_data": "data/hcp", 
       "scheme": "data/hcp/scheme.pkl"
     },
   
     "real_data_acquisition": {
-      "type": "HCP",
       "high_bmin": 5000e6,
       "high_bmax": 10000e6,
       "tolerance_bval": 100e6,
@@ -24,13 +23,18 @@
     },
   
     "real_data_preprocessing": {
-      "normalize_with_b0": true,
       "noise_distribution": "gaussian", 
-      "enforce_non_negativity": true
+      "enforce_non_negativity": true,
+      "sh_lambda_reg": 0.0,
+      "n_jobs": 12
     },
 
     "synthetic_data_parameters": {
       "N_signals": 2000000,
+      "N_signals_test": 200000,
+      "random_seed_train": 1234,
+      "random_seed_test": 5678,
+      "n_jobs": 12,
       "alphas_dirichlet": [1,1,1],
       "snr": [5,200], 
       "t2_intra_lower": 0.030,
@@ -63,20 +67,17 @@
         "sphvar_high_b_upper": false,
         "spectra_high_b_lower": true,
         "spectra_high_b_upper": false, 
-        "dpar": true,
-        "dperp": true,
-        "predicted_asf": false,
-        "calculated_asf": true
+        "predicted_asf": false
     },
 
     "RF_model_parameters": {
-      "type": "RF_regressor",
       "n_estimators": 200,
       "max_depth": 20,
       "min_samples_split": 2,
       "min_samples_leaf": 2,
       "max_features": "sqrt",
       "bootstrap": true,
+      "oob_score": true,
       "criterion": "squared_error",
       "random_state": 1234, 
       "n_jobs": 12
@@ -84,8 +85,11 @@
   
     "mapping": {
       "synthetic_data": "data/synthetic_data",
-      "path_maps": "data/hcp/maps/",
-      "model_path": "data/hcp/model/RF_model_best_D0.60.pkl",
-      "scaler_path": "data/hcp/model/RF_scaler_best_D0.60.pkl"
+      "model_path": "data/hcp/model/RF_model_best_D0.60.joblib",
+      "scaler_path": "data/hcp/model/RF_scaler_best_D0.60.joblib",
+      "labels_path": "data/hcp/results/RF_labels.npy",
+      "features_dir": "data/hcp/results/features",
+      "maps_dir": "data/hcp/results/maps",
+      "slices_dir": "data/hcp/results"
     }
   }

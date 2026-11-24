@@ -1,7 +1,7 @@
 # asfimaging/__init__.py
 
 from .pipeline.ASFpipeline import ASFpipeline
-from .preprocessing.preprocess import preprocess
+from .preprocessing.preprocess import Preprocessor
 from .preprocessing.generate_scheme import SchemeGenerator
 from .features.features import Features
 from .features.rslbps import RSLBPS
@@ -12,12 +12,13 @@ from .features.zonal_ratios import ZonalRatios
 
 from .model.RF_train import RFTrain
 from .model.RF_inference import RFInference
-from .model.asf import calculate_ASF
+from .model.asf import ASFCalculator
 from .synthetic_data.generator import SyntheticSignalGenerator
+from .config import load_config, validate_config
 
 
 __all__ = ["ASFpipeline", 
-           "preprocess",
+           "Preprocessor",
            "SchemeGenerator", 
            "Features", 
            "RSLBPS", 
@@ -27,5 +28,7 @@ __all__ = ["ASFpipeline",
            "ZonalRatios", 
            "RFTrain", 
            "RFInference", 
-           "calculate_ASF", 
-           "SyntheticSignalGenerator"]
+           "ASFCalculator",
+           "SyntheticSignalGenerator",
+           "load_config",
+           "validate_config"]
