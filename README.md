@@ -210,10 +210,30 @@ DATA_AND_MODEL_PROVENANCE.md    Array provenance and separate model/data terms
 
 ## Citation and provenance
 
-A project manuscript/DOI has not yet been specified. When reporting results,
-identify the repository and exact commit/version used rather than a placeholder
-citation. The positivity-constraint directions were generated with qspace; please
-also cite Caruyer E, Lenglet C, Sapiro G, Deriche R. Design of multishell sampling schemes with uniform coverage in diffusion MRI. Magn Reson Med. 2013;69(6):1534-1540. doi:10.1002/mrm.24736. For the bundled MGH-derived ODFs, follow the MGH-USC acknowledgment
+If you use this software, please cite:
+
+> Thøgersen TL, Corral-Bolaños M, Dyrby TB, Pizzolato M. Axonal signal fraction
+> imaging from diffusion MRI. *Medical Image Analysis*. 2026;104398.
+> doi:[10.1016/j.media.2026.104398](https://doi.org/10.1016/j.media.2026.104398)
+
+```bibtex
+@article{Thogersen2026ASF,
+  title     = {Axonal signal fraction imaging from diffusion {MRI}},
+  author    = {Th{\o}gersen, Thina L. and Corral-Bola{\~n}os, Mario and Dyrby, Tim B. and Pizzolato, Marco},
+  journal   = {Medical Image Analysis},
+  pages     = {104398},
+  year      = {2026},
+  month     = nov,
+  issn      = {1361-8415},
+  publisher = {Elsevier},
+  doi       = {10.1016/j.media.2026.104398},
+  url       = {https://doi.org/10.1016/j.media.2026.104398}
+}
+```
+
+When reporting results, also identify the exact repository commit/version used.
+The positivity-constraint directions were generated with qspace; please also
+cite Caruyer E, Lenglet C, Sapiro G, Deriche R. Design of multishell sampling schemes with uniform coverage in diffusion MRI. Magn Reson Med. 2013;69(6):1534-1540. doi:10.1002/mrm.24736. For the bundled MGH-derived ODFs, follow the MGH-USC acknowledgment
 and relevant data/method citation guidance linked in the provenance document.
 
 ## Data availability and pretrained models
@@ -225,7 +245,7 @@ processing history are unavailable. The project provides training code and
 instructions and retains this ODF collection with the following notice.
 
 > **HCP-derived ODF training data:** `odf_checked.npy` is not covered by the
-> project's Apache-2.0 license. If you use this collection to generate signals
+> project's AGPL-3.0 license. If you use this collection to generate signals
 > or train models, review the [MGH-USC HCP Data Agreement](https://www.humanconnectome.org/storage/app/media/documentation/mgh_diffusion/HCP_Data_Agreement.pdf)
 > and confirm which terms apply to your intended use, including redistribution
 > of the ODFs, simulated training data, or trained models and commercial use.
@@ -247,8 +267,8 @@ document.
 
 ## License
 
-Project-original source code is licensed under the **Apache License, Version
-2.0**; see [LICENSE](LICENSE).
+Project-original source code is licensed under the **GNU Affero General Public
+License, version 3 (AGPL-3.0-only)**; see [LICENSE](LICENSE).
 
 Four adapted DIPY functions retain their original
 **BSD-3-Clause** terms and copyright notice. See
@@ -259,6 +279,6 @@ The code license does not cover participant-derived data, generated training
 datasets, or pretrained models/scalers. Their provenance and separate licensing
 status are documented in [DATA_AND_MODEL_PROVENANCE.md](DATA_AND_MODEL_PROVENANCE.md).
 
-Distribution metadata records Apache-2.0 and BSD-3-Clause for code plus
+Distribution metadata records AGPL-3.0-only and BSD-3-Clause for code plus
 `LicenseRef-HCP-ODF` for the separately governed ODF array; that reference is
 not an additional grant of data rights.

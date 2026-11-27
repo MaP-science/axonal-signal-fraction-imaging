@@ -1,6 +1,7 @@
 # Third-party notices
 
-Project-original source code is licensed under the Apache License, Version 2.0
+Project-original source code is licensed under the GNU Affero General Public
+License, version 3 (AGPL-3.0-only)
 in [LICENSE](LICENSE). Third-party portions retain their original licenses and
 copyright notices. The project license does not replace dependency licenses.
 Data arrays and pretrained models have the separate scope described in
@@ -50,7 +51,7 @@ the requested citation.
 ## Installed dependencies
 
 Dependencies are separately licensed; installing or redistributing them does
-not place them under the project's Apache-2.0 license. Preserve their upstream
+not place them under the project's AGPL-3.0 license. Preserve their upstream
 license and notice files if distributing an environment, wheel bundle,
 container, or executable. Some installed distributions include additional
 third-party code, fonts, and native libraries with their own terms.

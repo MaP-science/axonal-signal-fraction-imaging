@@ -1,6 +1,6 @@
 # Data and pretrained-model provenance
 
-Recorded on 2026-11-24. The Apache-2.0 grant for project-original source code
+Recorded on 2026-11-24. The AGPL-3.0 grant for project-original source code
 does not license the arrays, input datasets, generated training datasets, or
 pretrained model/scaler artifacts described here. Their status is set out
 separately below. This separation does not impose new terms on third-party
@@ -26,7 +26,7 @@ material or determine whether upstream data terms apply to a trained model.
   absolute sphere average of real SH up to degree 24 below 2e-3 (near-uniform,
   not an exact spherical design). It does not match any direction array
   shipped with DIPY 1.11.0.
-- License: project-original material under the project's Apache-2.0 license.
+- License: project-original material under the project's AGPL-3.0 license.
   The array is output generated with qspace and contains no qspace source
   code; qspace's license covers its software and disclaims warranty for the
   sampling schemes it generates, without placing terms on them.
@@ -73,7 +73,7 @@ application; neither is available in this repository. References checked on
 
 The posted agreement limits disclosure to the approved uses and application,
 requires recipients to comply, and requires acknowledgment. It is not an
-unconditional Apache-2.0 data grant. This repository makes no independent
+unconditional open data grant. This repository makes no independent
 grant of redistribution rights for `odf_checked.npy`.
 
 The maintainer's selected approach is to provide code and training instructions
@@ -113,7 +113,7 @@ inputs. The bundled ODF collection is retained with its separate data-use
 notice; users can instead supply other documented ODF inputs.
 No pretrained `.pkl` files were found in the working tree during this review.
 Model parameters, fitted scalers, and generated training arrays are not granted
-Apache-2.0 rights by the source-code license. No separate model license is
+AGPL-3.0 rights by the source-code license. No separate model license is
 selected here.
 
 Before a pretrained-model release:
@@ -128,11 +128,11 @@ Before a pretrained-model release:
    card. Review the exported files for participant-derived records or metadata.
    Simulation or privacy checks alone do not establish redistribution rights.
 3. If unrestricted model redistribution is confirmed, make an explicit model
-   licensing decision with the rights holders; Apache-2.0 is a candidate to
-   assess, not an automatic consequence of the code license.
+   licensing decision with the rights holders; no model license follows
+   automatically from the AGPL-3.0 code license.
 4. If access or use conditions must carry through, distribute models only
    through an approved mechanism under the appropriate separate terms. Do not
-   label a restricted model release as unqualified Apache-2.0.
+   label a restricted model release as covered by the AGPL-3.0 code license.
 5. If the necessary model-release permissions/provenance cannot be established,
    continue providing code and training instructions without pretrained models,
    or retrain using fully documented inputs that permit the intended model
@@ -140,6 +140,6 @@ Before a pretrained-model release:
    described above; it is not automatically cleared for redistribution.
 
 These steps are release recommendations based on incomplete provenance, not
-new restrictions on the Apache-2.0 source code or a legal determination about
+new restrictions on the AGPL-3.0 source code or a legal determination about
 ownership of model parameters. No data custodian has been contacted as part
 of this repository update.

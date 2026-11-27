@@ -1,4 +1,4 @@
-# Project-original code: Apache-2.0; see LICENSE at the repository root.
+# Project-original code: AGPL-3.0-only; see LICENSE at the repository root.
 # The four functions marked below are adapted from DIPY (BSD-3-Clause).
 # Copyright (c) 2008-2025, dipy developers. All rights reserved.
 # Retain LICENSES/DIPY-BSD-3-Clause.txt and THIRD_PARTY_NOTICES.md with copies.

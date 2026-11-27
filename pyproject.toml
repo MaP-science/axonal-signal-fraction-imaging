@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Axonal signal fraction estimation from diffusion MRI"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Apache-2.0 AND BSD-3-Clause AND LicenseRef-HCP-ODF"
+license = "AGPL-3.0-only AND BSD-3-Clause AND LicenseRef-HCP-ODF"
 license-files = ["LICENSE", "LICENSES/*.txt", "THIRD_PARTY_NOTICES.md", "DATA_AND_MODEL_PROVENANCE.md"]
 dependencies = [
     "numpy>=1.25,<3",

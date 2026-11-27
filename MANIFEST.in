@@ -1,3 +1,4 @@
 include requirements-runtime-py310.txt
 recursive-include configs *.json
 recursive-include notebooks *.ipynb
+include CITATION.cff

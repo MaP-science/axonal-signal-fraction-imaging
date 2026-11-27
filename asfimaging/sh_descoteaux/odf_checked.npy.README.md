@@ -5,7 +5,7 @@ multi-shell multi-tissue constrained spherical deconvolution (MSMT-CSD) to
 one MGH Adult Diffusion HCP dataset, according to the project maintainer.
 The subject identifier and detailed processing history are unavailable.
 
-**This file is not covered by the project's Apache-2.0 source-code license.**
+**This file is not covered by the project's AGPL-3.0 source-code license.**
 If you use it to generate synthetic signals or train models, review the
 [MGH-USC HCP Data Agreement](https://www.humanconnectome.org/storage/app/media/documentation/mgh_diffusion/HCP_Data_Agreement.pdf)
 and confirm the terms applicable to your intended use, including commercial
